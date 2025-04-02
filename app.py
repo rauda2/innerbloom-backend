@@ -59,20 +59,25 @@ def analyze_voice():
 
         print(f"✅ Received audio: {audio_file.filename}")
 
-        # 🔥 Save WAV file temporarily
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_wav:
-            temp_wav.write(audio_file.read())
-            temp_wav_path = temp_wav.name
+        # Save .3gp temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".3gp") as temp_3gp:
+            temp_3gp.write(audio_file.read())
+            temp_3gp_path = temp_3gp.name
 
-        # 🔊 Transcribe audio
-        with sr.AudioFile(temp_wav_path) as source:
+        # Convert to .wav using pydub
+        wav_path = temp_3gp_path.replace(".3gp", ".wav")
+        AudioSegment.from_file(temp_3gp_path, format="3gp").export(wav_path, format="wav")
+        os.remove(temp_3gp_path)  # Clean up
+
+        # Transcribe the audio
+        with sr.AudioFile(wav_path) as source:
             audio_data = recognizer.record(source)
             transcript = recognizer.recognize_google(audio_data)
+        os.remove(wav_path)
 
-        os.remove(temp_wav_path)
         print(f"📝 Transcript: {transcript}")
 
-        # 💬 Analyze text emotion
+        # Analyze sentiment from transcript
         result = sentiment_model(transcript)[0]
         label = result["label"].lower()
         confidence = round(result["score"] * 100, 2)
