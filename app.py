@@ -10,16 +10,22 @@ import os
 app = Flask(__name__)
 CORS(app)
 
-# ✅ Load models once (because you’re on a high-memory Render plan)
+# ✅ Load models once (Render memory-optimized)
 print("🔄 Loading AI models...")
 sentiment_model = pipeline("sentiment-analysis")
 recognizer = sr.Recognizer()
 print("✅ Models loaded!")
 
+# ✅ Health check (important for Android + Render test)
+@app.route('/')
+def home():
+    return jsonify({"message": "Server is working!", "status": "pong 💖"})
+
 @app.route('/ping')
 def ping():
     return jsonify({"message": "Server is working!", "status": "pong 💖"})
 
+# ✅ Face emotion analysis
 @app.route('/analyze_face', methods=['POST'])
 def analyze_face():
     try:
@@ -30,7 +36,6 @@ def analyze_face():
         print(f"✅ Received image: {image.filename}")
         image_bytes = image.read()
 
-        # Analyze image for emotion
         result = DeepFace.analyze(img_path=image_bytes, actions=['emotion'], enforce_detection=False)
         emotion = result[0]['dominant_emotion']
         confidence = result[0]['emotion'][emotion]
@@ -44,6 +49,7 @@ def analyze_face():
         print("🔥 Face error:", e)
         return jsonify({"error": str(e)}), 500
 
+# ✅ Voice emotion analysis
 @app.route('/analyze_voice', methods=['POST'])
 def analyze_voice():
     try:
@@ -53,17 +59,14 @@ def analyze_voice():
 
         print(f"✅ Received audio: {audio_file.filename}")
 
-        # Save audio temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix='.3gp') as temp_3gp:
             temp_3gp.write(audio_file.read())
             temp_3gp_path = temp_3gp.name
 
-        # Convert to WAV
         wav_path = temp_3gp_path.replace(".3gp", ".wav")
         AudioSegment.from_file(temp_3gp_path, format="3gp").export(wav_path, format="wav")
         os.remove(temp_3gp_path)
 
-        # Transcribe audio
         with sr.AudioFile(wav_path) as source:
             audio_data = recognizer.record(source)
             transcript = recognizer.recognize_google(audio_data)
@@ -71,7 +74,6 @@ def analyze_voice():
 
         print(f"📝 Transcript: {transcript}")
 
-        # Analyze text sentiment
         result = sentiment_model(transcript)[0]
         label = result["label"].lower()
         confidence = round(result["score"] * 100, 2)
@@ -90,6 +92,7 @@ def analyze_voice():
         print("🔥 Voice error:", e)
         return jsonify({"error": str(e)}), 500
 
+# ✅ Combined face + voice emotion analysis
 @app.route('/analyze_combined', methods=['POST'])
 def analyze_combined():
     result = {}
