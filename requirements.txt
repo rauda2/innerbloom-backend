@@ -1,32 +1,27 @@
+# === Flask Backend ===
 Flask==3.1.0
 flask-cors==5.0.1
 gunicorn==23.0.0
 
+# === Face Emotion Detection ===
 deepface==0.0.93
 opencv-python==4.11.0.86
 mtcnn==0.1.1
-tensorflow==2.16.1  # ✅ Compatible with deepface and tf-keras needs
+tensorflow==2.16.1  # ✅ Compatible with tf-keras
 
-torch==2.2.2
-Flask==3.1.0
-flask-cors==5.0.1
-gunicorn==23.0.0
-
-deepface==0.0.93
-opencv-python==4.11.0.86
-mtcnn==0.1.1
-tensorflow==2.16.1  # ✅ Compatible with deepface and tf-keras needs
-
-torch==2.2.2
-torchaudio==2.2.2
-transformers==4.36.2
-
+# === Voice Emotion Detection ===
 SpeechRecognition==3.14.1
 pydub==0.25.1
 librosa==0.11.0
 soundfile==0.13.1
 audioread==3.0.1
 
+# === Text Sentiment Analysis ===
+torch==2.2.2
+torchaudio==2.2.2
+transformers==4.36.2
+
+# === Utilities / ML ===
 numpy==1.26.4
 scipy==1.13.1
 pandas==2.2.3

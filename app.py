@@ -1,128 +1,145 @@
 from flask import Flask, request, jsonify
-import os
-import numpy as np
-import cv2
+from flask_cors import CORS
+from deepface import DeepFace
+from transformers import pipeline
+import speech_recognition as sr
 from pydub import AudioSegment
 import tempfile
+import os
 
 app = Flask(__name__)
+CORS(app)
+
+# ✅ Load models once (because you’re on a high-memory Render plan)
+print("🔄 Loading AI models...")
+sentiment_model = pipeline("sentiment-analysis")
+recognizer = sr.Recognizer()
+print("✅ Models loaded!")
 
 @app.route('/')
 def home():
-    return "✅ Inner Bloom backend is alive!"
-
-@app.route('/ping')
-def ping():
-    return jsonify({"status": "pong 💓", "message": "Server is working!"})
-
+    return jsonify({"message": "Server is working!", "status": "pong 💖"})
 
 @app.route('/analyze_face', methods=['POST'])
 def analyze_face():
     try:
-        from deepface import DeepFace  # Lazy import
+        image = request.files.get("image")
+        if not image:
+            return jsonify({"error": "No image provided"}), 400
 
-        if 'image' not in request.files:
-            return jsonify({'error': 'No image provided'}), 400
+        print(f"✅ Received image: {image.filename}")
+        image_bytes = image.read()
 
-        image = request.files['image']
-        image_np = cv2.imdecode(np.frombuffer(image.read(), np.uint8), cv2.IMREAD_COLOR)
-
-        result = DeepFace.analyze(img_path=image_np, actions=['emotion'], enforce_detection=False)
+        # Analyze image for emotion
+        result = DeepFace.analyze(img_path=image_bytes, actions=['emotion'], enforce_detection=False)
         emotion = result[0]['dominant_emotion']
-        return jsonify({'label': emotion, 'score': 1.0})
+        confidence = result[0]['emotion'][emotion]
+
+        return jsonify({
+            "label": emotion,
+            "score": round(confidence, 2)
+        })
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
+        print("🔥 Face error:", e)
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/analyze_voice', methods=['POST'])
 def analyze_voice():
     try:
-        import speech_recognition as sr
-        from transformers import pipeline
+        audio_file = request.files.get("audio")
+        if not audio_file:
+            return jsonify({"error": "No audio provided"}), 400
 
-        if 'audio' not in request.files:
-            return jsonify({'error': 'No audio provided'}), 400
+        print(f"✅ Received audio: {audio_file.filename}")
 
-        audio = request.files['audio']
+        # Save audio temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.3gp') as temp_3gp:
+            temp_3gp.write(audio_file.read())
+            temp_3gp_path = temp_3gp.name
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_wav:
-            audio.save(temp_wav.name)
-            wav_path = temp_wav.name
+        # Convert to WAV
+        wav_path = temp_3gp_path.replace(".3gp", ".wav")
+        AudioSegment.from_file(temp_3gp_path, format="3gp").export(wav_path, format="wav")
+        os.remove(temp_3gp_path)
 
-        recognizer = sr.Recognizer()
+        # Transcribe audio
         with sr.AudioFile(wav_path) as source:
             audio_data = recognizer.record(source)
-
-        try:
             transcript = recognizer.recognize_google(audio_data)
-        except sr.UnknownValueError:
-            transcript = "Could not understand audio"
-
         os.remove(wav_path)
 
-        classifier = pipeline("sentiment-analysis")
-        voice_emotion = classifier(transcript)[0]
+        print(f"📝 Transcript: {transcript}")
+
+        # Analyze text sentiment
+        result = sentiment_model(transcript)[0]
+        label = result["label"].lower()
+        confidence = round(result["score"] * 100, 2)
 
         return jsonify({
-            'label': voice_emotion['label'].lower(),
-            'score': voice_emotion['score'],
-            'transcript': transcript
+            "label": label,
+            "score": confidence,
+            "transcript": transcript
         })
 
+    except sr.UnknownValueError:
+        return jsonify({"error": "Speech not recognized"}), 400
+    except sr.RequestError:
+        return jsonify({"error": "Speech API error"}), 503
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
+        print("🔥 Voice error:", e)
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/analyze_combined', methods=['POST'])
 def analyze_combined():
     result = {}
 
-    # Analyze face
-    if 'image' in request.files:
-        try:
-            from deepface import DeepFace
+    try:
+        # Face detection
+        if 'image' in request.files:
             image = request.files['image']
-            image_np = cv2.imdecode(np.frombuffer(image.read(), np.uint8), cv2.IMREAD_COLOR)
-            face_result = DeepFace.analyze(img_path=image_np, actions=['emotion'], enforce_detection=False)
-            result['face_emotion'] = face_result[0]['dominant_emotion']
-        except Exception as e:
-            result['face_emotion'] = 'error: ' + str(e)
+            print("✅ Received image for combined analysis:", image.filename)
+            image_bytes = image.read()
 
-    # Analyze voice
-    if 'audio' in request.files:
-        try:
-            import speech_recognition as sr
-            from transformers import pipeline
+            face_result = DeepFace.analyze(img_path=image_bytes, actions=['emotion'], enforce_detection=False)
+            face_emotion = face_result[0]['dominant_emotion']
+            face_confidence = face_result[0]['emotion'][face_emotion]
+            result['face_emotion'] = face_emotion
+            result['face_score'] = round(face_confidence, 2)
+
+        # Voice detection
+        if 'audio' in request.files:
             audio = request.files['audio']
+            print("✅ Received audio for combined analysis:", audio.filename)
 
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_wav:
-                audio.save(temp_wav.name)
-                wav_path = temp_wav.name
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.3gp') as temp_3gp:
+                temp_3gp.write(audio.read())
+                temp_3gp_path = temp_3gp.name
 
-            recognizer = sr.Recognizer()
+            wav_path = temp_3gp_path.replace('.3gp', '.wav')
+            AudioSegment.from_file(temp_3gp_path, format="3gp").export(wav_path, format="wav")
+            os.remove(temp_3gp_path)
+
             with sr.AudioFile(wav_path) as source:
                 audio_data = recognizer.record(source)
-
-            try:
                 transcript = recognizer.recognize_google(audio_data)
-                result['transcript'] = transcript
-                classifier = pipeline("sentiment-analysis")
-                voice_result = classifier(transcript)[0]
-                result['voice_emotion'] = voice_result['label'].lower()
-            except sr.UnknownValueError:
-                result['transcript'] = "Could not understand audio"
-                result['voice_emotion'] = "unknown"
-
             os.remove(wav_path)
 
-        except Exception as e:
-            result['voice_emotion'] = 'error: ' + str(e)
+            print("🗣️ Transcript:", transcript)
+            result['transcript'] = transcript
 
-    return jsonify(result)
+            voice_result = sentiment_model(transcript)[0]
+            voice_emotion = voice_result['label'].lower()
+            voice_confidence = round(voice_result['score'] * 100, 2)
+            result['voice_emotion'] = voice_emotion
+            result['voice_score'] = voice_confidence
 
+        return jsonify(result)
+
+    except Exception as e:
+        print("🔥 Combined error:", e)
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=5000, debug=False)
 
