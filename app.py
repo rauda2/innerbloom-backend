@@ -16,8 +16,8 @@ sentiment_model = pipeline("sentiment-analysis")
 recognizer = sr.Recognizer()
 print("✅ Models loaded!")
 
-@app.route('/')
-def home():
+@app.route('/ping')
+def ping():
     return jsonify({"message": "Server is working!", "status": "pong 💖"})
 
 @app.route('/analyze_face', methods=['POST'])
