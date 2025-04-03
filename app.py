@@ -59,25 +59,45 @@ def analyze_voice():
 
         print(f"✅ Received audio: {audio_file.filename}")
 
-        # Save .3gp temporarily
+        # 🔹 Step 1: Save the incoming .3gp file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".3gp") as temp_3gp:
             temp_3gp.write(audio_file.read())
             temp_3gp_path = temp_3gp.name
+        print("📦 Saved .3gp to:", temp_3gp_path)
 
-        # Convert to .wav using pydub
+        # 🔹 Step 2: Convert to .wav using pydub
         wav_path = temp_3gp_path.replace(".3gp", ".wav")
-        AudioSegment.from_file(temp_3gp_path, format="3gp").export(wav_path, format="wav")
-        os.remove(temp_3gp_path)  # Clean up
+        try:
+            print("🛠 Converting .3gp to .wav...")
+            AudioSegment.from_file(temp_3gp_path, format="3gp").export(wav_path, format="wav")
+            print("✅ Conversion successful:", wav_path)
+        except Exception as conv_err:
+            print("❌ Conversion failed:", conv_err)
+            return jsonify({"error": f"Conversion failed: {conv_err}"}), 400
+        finally:
+            os.remove(temp_3gp_path)  # Clean up .3gp file
 
-        # Transcribe the audio
-        with sr.AudioFile(wav_path) as source:
-            audio_data = recognizer.record(source)
-            transcript = recognizer.recognize_google(audio_data)
-        os.remove(wav_path)
+        # 🔹 Step 3: Transcribe with SpeechRecognition
+        try:
+            with sr.AudioFile(wav_path) as source:
+                audio_data = recognizer.record(source)
+                transcript = recognizer.recognize_google(audio_data)
+            print(f"📝 Transcript: {transcript}")
+        except sr.UnknownValueError:
+            os.remove(wav_path)
+            return jsonify({"error": "Speech not recognized"}), 400
+        except sr.RequestError:
+            os.remove(wav_path)
+            return jsonify({"error": "Speech API error"}), 503
+        except Exception as e:
+            os.remove(wav_path)
+            print("❌ Transcription failed:", e)
+            return jsonify({"error": str(e)}), 500
+        finally:
+            if os.path.exists(wav_path):
+                os.remove(wav_path)  # Clean up .wav file
 
-        print(f"📝 Transcript: {transcript}")
-
-        # Analyze sentiment from transcript
+        # 🔹 Step 4: Analyze sentiment from transcript
         result = sentiment_model(transcript)[0]
         label = result["label"].lower()
         confidence = round(result["score"] * 100, 2)
@@ -88,10 +108,6 @@ def analyze_voice():
             "transcript": transcript
         })
 
-    except sr.UnknownValueError:
-        return jsonify({"error": "Speech not recognized"}), 400
-    except sr.RequestError:
-        return jsonify({"error": "Speech API error"}), 503
     except Exception as e:
         print("🔥 Voice error:", e)
         return jsonify({"error": str(e)}), 500
