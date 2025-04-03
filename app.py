@@ -50,67 +50,44 @@ def analyze_face():
         return jsonify({"error": str(e)}), 500
 
 # ✅ Voice emotion analysis
-@app.route('/analyze_voice', methods=['POST'])
+@app.route("/analyze_voice", methods=["POST"])
 def analyze_voice():
+    audio_file = request.files.get("audio")
+    if not audio_file:
+        return jsonify({"error": "No audio file provided"}), 400
+
+    # Save .3gp
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".3gp") as temp_3gp:
+        temp_3gp.write(audio_file.read())
+        temp_3gp_path = temp_3gp.name
+
+    print(f"📦 Saved .3gp to: {temp_3gp_path}")
+
     try:
-        audio_file = request.files.get("audio")
-        if not audio_file:
-            return jsonify({"error": "No audio provided"}), 400
-
-        print(f"✅ Received audio: {audio_file.filename}")
-
-        # 🔹 Step 1: Save the incoming .3gp file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".3gp") as temp_3gp:
-            temp_3gp.write(audio_file.read())
-            temp_3gp_path = temp_3gp.name
-        print("📦 Saved .3gp to:", temp_3gp_path)
-
-        # 🔹 Step 2: Convert to .wav using pydub
+        # Convert to .wav
         wav_path = temp_3gp_path.replace(".3gp", ".wav")
-        try:
-            print("🛠 Converting .3gp to .wav...")
-            AudioSegment.from_file(temp_3gp_path, format="3gp").export(wav_path, format="wav")
-            print("✅ Conversion successful:", wav_path)
-        except Exception as conv_err:
-            print("❌ Conversion failed:", conv_err)
-            return jsonify({"error": f"Conversion failed: {conv_err}"}), 400
-        finally:
-            os.remove(temp_3gp_path)  # Clean up .3gp file
-
-        # 🔹 Step 3: Transcribe with SpeechRecognition
-        try:
-            with sr.AudioFile(wav_path) as source:
-                audio_data = recognizer.record(source)
-                transcript = recognizer.recognize_google(audio_data)
-            print(f"📝 Transcript: {transcript}")
-        except sr.UnknownValueError:
-            os.remove(wav_path)
-            return jsonify({"error": "Speech not recognized"}), 400
-        except sr.RequestError:
-            os.remove(wav_path)
-            return jsonify({"error": "Speech API error"}), 503
-        except Exception as e:
-            os.remove(wav_path)
-            print("❌ Transcription failed:", e)
-            return jsonify({"error": str(e)}), 500
-        finally:
-            if os.path.exists(wav_path):
-                os.remove(wav_path)  # Clean up .wav file
-
-        # 🔹 Step 4: Analyze sentiment from transcript
-        result = sentiment_model(transcript)[0]
-        label = result["label"].lower()
-        confidence = round(result["score"] * 100, 2)
-
-        return jsonify({
-            "label": label,
-            "score": confidence,
-            "transcript": transcript
-        })
-
+        AudioSegment.from_file(temp_3gp_path, format="3gp").export(wav_path, format="wav")
+        print(f"✅ Conversion successful: {wav_path}")
     except Exception as e:
-        print("🔥 Voice error:", e)
-        return jsonify({"error": str(e)}), 500
+        print(f"❌ Conversion failed: {e}")
+        return jsonify({"error": "Conversion failed"}), 500
+    finally:
+        os.remove(temp_3gp_path)
+
+    # Transcribe
+    try:
+        with sr.AudioFile(wav_path) as source:
+            audio_data = recognizer.record(source)
+            transcript = recognizer.recognize_google(audio_data)
+    except Exception as e:
+        print(f"❌ Transcription failed: {e}")
+        transcript = "Could not transcribe"
+
+    os.remove(wav_path)
+
+    # Analyze emotion (dummy example)
+    label = analyze_emotion(transcript)
+    return jsonify({"label": label, "transcript": transcript})
 
 # ✅ Combined face + voice emotion analysis
 @app.route('/analyze_combined', methods=['POST'])
