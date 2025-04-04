@@ -8,6 +8,7 @@ deepface==0.0.93
 opencv-python-headless==4.11.0.86  # ✅ headless = no GUI, saves memory
 mtcnn==0.1.1
 tensorflow==2.16.1  # Latest stable, GPU-friendly
+tf-keras==2.16.0
 
 # === Voice Emotion Detection ===
 SpeechRecognition==3.10.1  # More stable with Google engine
@@ -31,6 +32,8 @@ joblib==1.4.2
 ffmpeg-python==0.2.0  # Optional, backend audio conversion (if needed)
 
 uvicorn==0.29.0  # If you want to run async mode or migrate to FastAPI
+
+
 
 
 
