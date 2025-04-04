@@ -9,7 +9,6 @@ import tempfile
 import speech_recognition as sr
 from pydub import AudioSegment
 from transformers import pipeline
-import traceback
 
 app = Flask(__name__)
 CORS(app)
@@ -27,10 +26,17 @@ def analyze_emotion(text):
     else:
         return "neutral"
 
-@app.route("/ping")
+# ✅ Root route for Render 404 fix
+@app.route("/")
+def home():
+    return "<h2>🌸 Inner Bloom API is running</h2>", 200
+
+# ✅ Simple ping to test connection
+@app.route("/ping", methods=["GET"])
 def ping():
     return jsonify({"status": "ok", "message": "✅ Inner Bloom server is alive!"})
 
+# ✅ Analyze face emotion from uploaded image
 @app.route("/analyze_face", methods=["POST"])
 def analyze_face():
     if 'image' not in request.files:
@@ -47,6 +53,7 @@ def analyze_face():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ✅ Analyze voice emotion with transcription + sentiment
 @app.route("/analyze_voice", methods=["POST"])
 def analyze_voice():
     if 'audio' not in request.files:
@@ -81,49 +88,6 @@ def analyze_voice():
 
     except Exception as e:
         print(f"❌ Transcription failed: {e}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/analyze_combined", methods=["POST"])
-def analyze_combined():
-    if 'audio' not in request.files or 'image' not in request.files:
-        return jsonify({"error": "Missing audio or image"}), 400
-
-    audio_file = request.files['audio']
-    image_file = request.files['image']
-
-    try:
-        # ✅ Handle audio
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".3gp") as temp_3gp:
-            temp_3gp.write(audio_file.read())
-            temp_3gp_path = temp_3gp.name
-
-        wav_path = temp_3gp_path.replace(".3gp", ".wav")
-        AudioSegment.from_file(temp_3gp_path, format="3gp").export(wav_path, format="wav")
-
-        recognizer = sr.Recognizer()
-        with sr.AudioFile(wav_path) as source:
-            audio_data = recognizer.record(source)
-            transcript = recognizer.recognize_google(audio_data)
-
-        voice_emotion = analyze_emotion(transcript)
-
-        # ✅ Handle image
-        img_array = np.frombuffer(image_file.read(), np.uint8)
-        frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-        result = DeepFace.analyze(frame, actions=['emotion'], enforce_detection=False)
-        face_emotion = result[0]['dominant_emotion']
-
-        os.remove(temp_3gp_path)
-        os.remove(wav_path)
-
-        return jsonify({
-            "face_emotion": face_emotion,
-            "voice_emotion": voice_emotion,
-            "transcript": transcript
-        })
-
-    except Exception as e:
-        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
