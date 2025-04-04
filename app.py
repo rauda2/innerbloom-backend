@@ -9,6 +9,7 @@ import tempfile
 import speech_recognition as sr
 from pydub import AudioSegment
 from transformers import pipeline
+import traceback
 
 app = Flask(__name__)
 CORS(app)
@@ -84,20 +85,14 @@ def analyze_voice():
 
 @app.route("/analyze_combined", methods=["POST"])
 def analyze_combined():
-    if 'image' not in request.files or 'audio' not in request.files:
-        return jsonify({"error": "Both image and audio are required"}), 400
+    if 'audio' not in request.files or 'image' not in request.files:
+        return jsonify({"error": "Missing audio or image"}), 400
 
-    image_file = request.files['image']
     audio_file = request.files['audio']
+    image_file = request.files['image']
 
     try:
-        # === FACE ANALYSIS ===
-        img_array = np.frombuffer(image_file.read(), np.uint8)
-        frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-        face_result = DeepFace.analyze(frame, actions=['emotion'], enforce_detection=False)
-        face_emotion = face_result[0]['dominant_emotion']
-
-        # === VOICE ANALYSIS ===
+        # ✅ Handle audio
         with tempfile.NamedTemporaryFile(delete=False, suffix=".3gp") as temp_3gp:
             temp_3gp.write(audio_file.read())
             temp_3gp_path = temp_3gp.name
@@ -112,6 +107,12 @@ def analyze_combined():
 
         voice_emotion = analyze_emotion(transcript)
 
+        # ✅ Handle image
+        img_array = np.frombuffer(image_file.read(), np.uint8)
+        frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+        result = DeepFace.analyze(frame, actions=['emotion'], enforce_detection=False)
+        face_emotion = result[0]['dominant_emotion']
+
         os.remove(temp_3gp_path)
         os.remove(wav_path)
 
@@ -122,7 +123,7 @@ def analyze_combined():
         })
 
     except Exception as e:
-        print(f"❌ Combined analysis failed: {e}")
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
