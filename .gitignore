@@ -1,0 +1,13 @@
+# Ignore system and cache files
+.DS_Store
+__pycache__/
+
+# Ignore model/training data
+models/
+dataset/
+logs/
+
+# Virtual environments and hidden files
+.venv/
+.env
+
