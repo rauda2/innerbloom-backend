@@ -10,6 +10,7 @@ from transformers import pipeline
 from torchvision import transforms
 from torchvision.models import resnet18
 import torchaudio
+import torch.nn as nn
 
 # === Setup ===
 app = Flask(__name__)
