@@ -28,6 +28,8 @@ scipy==1.13.1
 pandas==2.2.3
 joblib==1.4.2
 
+torchvision==0.17.2
+
 # === Backend I/O and Audio ===
 ffmpeg-python==0.2.0  # Optional, backend audio conversion (if needed)
 
