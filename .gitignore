@@ -5,25 +5,29 @@ Thumbs.db
 __pycache__/
 *.pyc
 
-# === Virtual Environments ===
+# === Python Virtual Envs ===
 .venv/
 .env
 
-# Ignore all models except model.pt for face emotion
+# === VSCode ===
+.vscode/
+
+# === Model Data (Only keep necessary .pt files) ===
 models/*
 !models/face_emotion_model/
 !models/face_emotion_model/model.pt
+!models/voice_emotion_model/
+!models/voice_emotion_model/model.pt
 
-# === Training Data, Checkpoints, Logs ===
+# === Training Data, Logs, and Checkpoints ===
 dataset/
 logs/
 *.h5
 *.ckpt
 *.pth
-*.pt
 *.onnx
 
-# === Android Studio Related ===
+# === Android Studio ===
 *.iml
 .gradle/
 .idea/
@@ -34,6 +38,9 @@ local.properties
 build/
 captures/
 
-# === VSCode Related ===
-.vscode/
+# === Build Artifacts ===
+*.tar.gz
+*.zip
+dist/
+build/
 

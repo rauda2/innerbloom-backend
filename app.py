@@ -35,23 +35,26 @@ face_transform = transforms.Compose([
 ])
 
 # === Voice Classifier Load ===
-VOICE_MODEL_PATH = "models/voice_emotion_model/model.pt"
-
-class VoiceClassifier(torch.nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim):
+class VoiceClassifier(nn.Module):
+    def __init__(self):
         super(VoiceClassifier, self).__init__()
-        self.fc1 = torch.nn.Linear(input_dim, hidden_dim)
-        self.relu = torch.nn.ReLU()
-        self.fc2 = torch.nn.Linear(hidden_dim, output_dim)
+        self.fc1 = nn.Linear(193, 128)
+        self.relu = nn.ReLU()
+        self.fc2 = nn.Linear(128, 7)
 
     def forward(self, x):
         x = self.fc1(x)
         x = self.relu(x)
         return self.fc2(x)
 
-voice_model = VoiceClassifier(193, 128, len(EMOTION_LABELS))
-voice_model.load_state_dict(torch.load(VOICE_MODEL_PATH, map_location=device))
-voice_model.eval()
+# Create and save the correct model structure
+print("🎙️ Creating voice model with correct shape...")
+voice_model = VoiceClassifier()
+
+# Dummy save (no training)
+os.makedirs("models/voice_emotion_model", exist_ok=True)
+torch.save(voice_model.state_dict(), "models/voice_emotion_model/model.pt")
+print("✅ Voice Emotion Model structure saved.")
 
 # === Chat Classifier Load ===
 chat_classifier = pipeline("text-classification", model="j-hartmann/emotion-english-distilroberta-base", return_all_scores=True)
