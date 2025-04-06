@@ -1,151 +1,112 @@
 import os
+import cv2
+import numpy as np
 import torch
 import librosa
-import numpy as np
-import soundfile as sf
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from PIL import Image
 from transformers import pipeline
-from torchvision import transforms
-from torchvision.models import resnet18
-import torchaudio
-import torch.nn as nn
 
-# === Setup ===
 app = Flask(__name__)
 CORS(app)
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Device set to use {device}")
-
-# === Emotion Labels ===
 EMOTION_LABELS = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise']
 
-# === Face Model Load ===
-FACE_MODEL_PATH = "models/face_emotion_model/model.pt"
+@app.route("/ping")
+def ping():
+    return jsonify({"status": "ok", "message": "Server is running ✅"})
 
-face_model = resnet18(pretrained=False)
-face_model.fc = torch.nn.Linear(face_model.fc.in_features, len(EMOTION_LABELS))
-face_model.load_state_dict(torch.load(FACE_MODEL_PATH, map_location=device))
-face_model.eval()
-
-face_transform = transforms.Compose([
-    transforms.Resize((48, 48)),
-    transforms.ToTensor()
-])
-
-# === Voice Classifier Load ===
-class VoiceClassifier(nn.Module):
-    def __init__(self):
-        super(VoiceClassifier, self).__init__()
-        self.fc1 = nn.Linear(193, 128)
-        self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(128, 7)
-
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.relu(x)
-        return self.fc2(x)
-
-# Create and save the correct model structure
-print("🎙️ Creating voice model with correct shape...")
-voice_model = VoiceClassifier()
-
-# Dummy save (no training)
-os.makedirs("models/voice_emotion_model", exist_ok=True)
-torch.save(voice_model.state_dict(), "models/voice_emotion_model/model.pt")
-print("✅ Voice Emotion Model structure saved.")
-
-# === Chat Classifier Load ===
-chat_classifier = pipeline("text-classification", model="j-hartmann/emotion-english-distilroberta-base", return_all_scores=True)
-chat_summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
-
-# === Routes ===
-
-@app.route("/")
-def index():
-    return jsonify({"message": "Inner Bloom Emotion Detection API"})
-
-
-@app.route("/analyze_face_frame", methods=["POST"])
+# === FACE EMOTION ANALYSIS ===
+@app.route("/analyze_face", methods=["POST"])
 def analyze_face():
-    image_file = request.files["image"]
-    image = Image.open(image_file)
-    if image.mode != 'RGB':
-        image = image.convert('RGB')
-    tensor = face_transform(image).unsqueeze(0)
+    try:
+        from torchvision import models, transforms
+        from torch import nn
 
-    with torch.no_grad():
-        output = face_model(tensor)
-        prediction = torch.argmax(output, dim=1).item()
-        score = torch.nn.functional.softmax(output, dim=1)[0][prediction].item()
+        image_file = request.files['image']
+        image_bytes = np.frombuffer(image_file.read(), np.uint8)
+        img = cv2.imdecode(image_bytes, cv2.IMREAD_COLOR)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    return jsonify({
-        "label": EMOTION_LABELS[prediction],
-        "score": round(score * 100, 2)
-    })
+        transform = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.Resize((224, 224)),
+            transforms.ToTensor()
+        ])
 
+        tensor_img = transform(img).unsqueeze(0)
 
-@app.route("/analyze_voice_chunk", methods=["POST"])
+        model = models.resnet18(weights=None)
+        model.fc = nn.Linear(model.fc.in_features, len(EMOTION_LABELS))
+        model.load_state_dict(torch.load("models/face_emotion_model/model.pt", map_location="cpu"))
+        model.eval()
+
+        with torch.no_grad():
+            output = model(tensor_img)
+            predicted = torch.argmax(output, dim=1).item()
+            confidence = torch.nn.functional.softmax(output, dim=1)[0][predicted].item() * 100
+
+        return jsonify({"label": EMOTION_LABELS[predicted], "score": round(confidence, 2)})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# === VOICE EMOTION ANALYSIS ===
+@app.route("/analyze_voice", methods=["POST"])
 def analyze_voice():
-    audio_file = request.files["audio"]
-    audio_path = "temp.wav"
-    audio_file.save(audio_path)
+    try:
+        audio_file = request.files['audio']
+        filepath = "temp_audio.wav"
+        audio_file.save(filepath)
 
-    y, sr = librosa.load(audio_path, sr=16000)
-    mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=40)
-    chroma = librosa.feature.chroma_stft(y=y, sr=sr)
-    mel = librosa.feature.melspectrogram(y=y, sr=sr)
+        y, sr = librosa.load(filepath, sr=16000)
+        mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=40)
+        features = np.mean(mfccs.T, axis=0)
+        features = torch.tensor(features, dtype=torch.float32).unsqueeze(0)
 
-    feature_vector = np.hstack((
-        np.mean(mfcc, axis=1),
-        np.mean(chroma, axis=1),
-        np.mean(mel, axis=1)
-    ))
+        class VoiceClassifier(torch.nn.Module):
+            def __init__(self, input_dim, hidden_dim, output_dim):
+                super().__init__()
+                self.fc1 = torch.nn.Linear(input_dim, hidden_dim)
+                self.relu = torch.nn.ReLU()
+                self.fc2 = torch.nn.Linear(hidden_dim, output_dim)
 
-    feature_vector = torch.tensor(feature_vector, dtype=torch.float32).unsqueeze(0)
+            def forward(self, x):
+                x = self.fc1(x)
+                x = self.relu(x)
+                return self.fc2(x)
 
-    with torch.no_grad():
-        output = voice_model(feature_vector)
-        prediction = torch.argmax(output, dim=1).item()
-        score = torch.nn.functional.softmax(output, dim=1)[0][prediction].item()
+        model = VoiceClassifier(40, 128, len(EMOTION_LABELS))
+        model.load_state_dict(torch.load("models/voice_emotion_model/model.pt", map_location="cpu"))
+        model.eval()
 
-    return jsonify({
-        "label": EMOTION_LABELS[prediction],
-        "score": round(score * 100, 2),
-        "transcript": "voice emotion placeholder"
-    })
+        with torch.no_grad():
+            output = model(features)
+            predicted = torch.argmax(output, dim=1).item()
+            confidence = torch.nn.functional.softmax(output, dim=1)[0][predicted].item() * 100
 
+        return jsonify({"label": EMOTION_LABELS[predicted], "score": round(confidence, 2)})
 
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# === CHAT EMOTION ANALYSIS ===
 @app.route("/analyze_chat_history", methods=["POST"])
-def analyze_chat_history():
-    data = request.get_json()
-    chat_text = data.get("text", "")
+def analyze_chat():
+    try:
+        user_input = request.json.get("text")
 
-    if not chat_text.strip():
-        return jsonify({"error": "Empty chat text"}), 400
+        classifier = pipeline("text-classification", model="j-hartmann/emotion-english-distilroberta-base", top_k=1)
+        result = classifier(user_input)[0]
 
-    # Step 1: Summarize
-    summary_result = chat_summarizer(chat_text, max_length=100, min_length=20, do_sample=False)
-    summary = summary_result[0]["summary_text"]
+        return jsonify({
+            "label": result['label'].lower(),
+            "score": round(result['score'] * 100, 2),
+            "reason": f"The message sounds {result['label'].lower()} based on text sentiment analysis."
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-    # Step 2: Emotion
-    emotion_scores = chat_classifier(summary)[0]
-    emotion_scores.sort(key=lambda x: x["score"], reverse=True)
-    top_emotion = emotion_scores[0]
-
-    reason = f"The emotion '{top_emotion['label'].lower()}' was detected because the summary contains themes or language that reflect {top_emotion['label'].lower()} behavior or feelings."
-
-    return jsonify({
-        "summary": summary,
-        "label": top_emotion["label"].lower(),
-        "score": round(top_emotion["score"] * 100, 2),
-        "reason": reason
-    })
-
-
-# === Run Server ===
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001, debug=True)
+    app.run(debug=True, host="0.0.0.0", port=5001)
 
