@@ -1,13 +1,39 @@
-# Ignore system and cache files
+# === System Files ===
 .DS_Store
+Thumbs.db
+*.log
 __pycache__/
+*.pyc
 
-# Ignore model/training data
-models/
-dataset/
-logs/
-
-# Virtual environments and hidden files
+# === Virtual Environments ===
 .venv/
 .env
+
+# Ignore all models except model.pt for face emotion
+models/*
+!models/face_emotion_model/
+!models/face_emotion_model/model.pt
+
+# === Training Data, Checkpoints, Logs ===
+dataset/
+logs/
+*.h5
+*.ckpt
+*.pth
+*.pt
+*.onnx
+
+# === Android Studio Related ===
+*.iml
+.gradle/
+.idea/
+*.apk
+*.aar
+*.cxx/
+local.properties
+build/
+captures/
+
+# === VSCode Related ===
+.vscode/
 
