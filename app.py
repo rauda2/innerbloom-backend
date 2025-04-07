@@ -91,21 +91,24 @@ def analyze_voice():
         return jsonify({"error": str(e)}), 500
 
 # === CHAT EMOTION ANALYSIS ===
-@app.route("/analyze_chat_history", methods=["POST"])
+@app.route('/analyze_chat_history', methods=['POST'])
 def analyze_chat():
     try:
-        user_input = request.json.get("text")
+        data = request.json
+        print("💬 Incoming Chat Data:", data)
 
-        classifier = pipeline("text-classification", model="j-hartmann/emotion-english-distilroberta-base", top_k=1)
-        result = classifier(user_input)[0]
+        # Your logic here, for example:
+        result = chat_pipeline(data['text'])  # make sure 'text' exists!
 
-        return jsonify({
-            "label": result['label'].lower(),
-            "score": round(result['score'] * 100, 2),
-            "reason": f"The message sounds {result['label'].lower()} based on text sentiment analysis."
-        })
+        # Build response
+        label = result[0]['label']
+        score = round(result[0]['score'] * 100)
+        reason = f"Model predicted {label} with confidence {score}%"
+        return jsonify({'label': label, 'score': score, 'reason': reason})
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print("❌ Error in /analyze_chat_history:", str(e))
+        return jsonify({"error": "Server error", "details": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5001)
