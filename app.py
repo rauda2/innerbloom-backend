@@ -6,6 +6,11 @@ import librosa
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from transformers import pipeline
+import openai
+from dotenv import load_dotenv
+load_dotenv()
+
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 app = Flask(__name__)
 CORS(app)
@@ -91,25 +96,53 @@ def analyze_voice():
         return jsonify({"error": str(e)}), 500
 
 # === CHAT EMOTION ANALYSIS ===
-@app.route('/analyze_chat_history', methods=['POST'])
-def analyze_chat():
+@app.route("/analyze_chat_history", methods=["POST"])
+def analyze_chat_history():
     try:
-        data = request.json
-        print("💬 Incoming Chat Data:", data)
+        data = request.get_json()
+        chat_history = data.get("text", "")  # include full chat transcript
 
-        # Your logic here, for example:
-        result = chat_pipeline(data['text'])  # make sure 'text' exists!
+        prompt = f"""
+You are an emotion analysis assistant. Your job is to analyze the emotional tone of a user's chat messages.
 
-        # Build response
-        label = result[0]['label']
-        score = round(result[0]['score'] * 100)
-        reason = f"Model predicted {label} with confidence {score}%"
-        return jsonify({'label': label, 'score': score, 'reason': reason})
+1. First, summarize the entire chat conversation briefly.
+2. Then, detect the dominant emotion from this list: 
+   - happy, sad, angry, fear, disgust, neutral, surprise
+
+3. Estimate the emotion's confidence as a percentage based on NLP context and patterns.
+4. Provide a reason for choosing that emotion based on the chat.
+5. If the emotion confidence is above 70%, suggest an appropriate action Inner Bloom could take.
+
+Respond only in this structured JSON format:
+
+{{
+  "summary": "<brief summary of the chat>",
+  "label": "<one of: happy, sad, angry, fear, disgust, neutral, surprise>",
+  "score": "<confidence percentage, e.g. 85>",
+  "reason": "<why this emotion was chosen>",
+  "suggested_action": "<what the app should do, or say 'No action needed'>"
+}}
+
+Chat History:
+\"\"\"{chat_history}\"\"\"
+"""
+
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo-0125",
+            messages=[
+                {"role": "system", "content": "You're an emotion analysis assistant."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        ai_reply = response['choices'][0]['message']['content']
+        import json
+        result = json.loads(ai_reply)
+
+        return jsonify(result)
 
     except Exception as e:
-        print("❌ Error in /analyze_chat_history:", str(e))
-        return jsonify({"error": "Server error", "details": str(e)}), 500
-
+        return jsonify({"error": str(e)}), 500
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5001)
 
