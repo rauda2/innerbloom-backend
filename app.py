@@ -191,8 +191,10 @@ def analyze_combined():
         traceback.print_exc()
         return jsonify({"error": "Combined analysis failed", "details": str(e)}), 500
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+# === CHAT EMOTION ANALYSIS ===
+@app.route("/analyze_chat_history", methods=["POST"])
+def analyze_chat_history():
+    try:
         data = request.get_json()
         text = data.get("text", "")
 
@@ -210,6 +212,7 @@ if __name__ == "__main__":
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5001)
