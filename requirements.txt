@@ -35,6 +35,4 @@ ffmpeg-python==0.2.0  # Optional, backend audio conversion (if needed)
 
 uvicorn==0.29.0  # If you want to run async mode or migrate to FastAPI
 
-
-
-openai
+python-dotenv==1.0.1
