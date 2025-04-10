@@ -8,6 +8,19 @@ from flask_cors import CORS
 from torchvision import models, transforms
 from torch import nn
 import traceback
+from transformers import pipeline
+import openai
+from dotenv import load_dotenv
+load_dotenv()
+
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+
+CHAT_LABELS = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise']
+
+chat_tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
+chat_model = AutoModelForSequenceClassification.from_pretrained("distilbert-base-uncased", num_labels=len(CHAT_LABELS))
+chat_model.load_state_dict(torch.load("models/chat_emotion_model.pth", map_location="cpu"))
+chat_model.eval()
 
 app = Flask(__name__)
 CORS(app)
@@ -180,4 +193,24 @@ def analyze_combined():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
+        data = request.get_json()
+        text = data.get("text", "")
+
+        inputs = chat_tokenizer(text, return_tensors="pt", truncation=True, padding=True)
+        with torch.no_grad():
+            outputs = chat_model(**inputs)
+            scores = torch.nn.functional.softmax(outputs.logits, dim=1)
+            predicted = torch.argmax(scores, dim=1).item()
+            confidence = scores[0][predicted].item() * 100
+
+        return jsonify({
+            "label": CHAT_LABELS[predicted],
+            "score": round(confidence, 2)
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=5001)
 
