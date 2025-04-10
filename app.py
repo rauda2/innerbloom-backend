@@ -6,11 +6,10 @@ import librosa
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from torchvision import models, transforms
+from dotenv import load_dotenv
 from torch import nn
 import traceback
 from transformers import pipeline
-import openai
-from dotenv import load_dotenv
 load_dotenv()
 
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
@@ -37,11 +36,21 @@ try:
 except Exception as e:
     print("❌ Error loading face model:", e)
 
-VOICE_MODEL = nn.Sequential(
-    nn.Linear(40, 64),
-    nn.ReLU(),
-    nn.Linear(64, len(EMOTION_LABELS))
-)
+# === Voice Model Definition ===
+class VoiceClassifier(nn.Module):
+    def __init__(self, input_dim=40, hidden_dim=64, output_dim=len(EMOTION_LABELS)):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, output_dim)
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+# === Load the Voice Model ===
+VOICE_MODEL = VoiceClassifier()
 try:
     VOICE_MODEL.load_state_dict(torch.load(os.path.join("models", "voice_emotion_model.pth"), map_location='cpu'))
     VOICE_MODEL.eval()
