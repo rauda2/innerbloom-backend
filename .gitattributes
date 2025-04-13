@@ -1,3 +1,0 @@
-models/chat_emotion_model.pth filter=lfs diff=lfs merge=lfs -text
-models/face_emotion_model.pth filter=lfs diff=lfs merge=lfs -text
-models/voice_emotion_model.pth filter=lfs diff=lfs merge=lfs -text
