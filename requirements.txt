@@ -20,6 +20,7 @@ audioread==3.0.1
 # === Text Sentiment Analysis ===
 torch==2.2.2
 torchaudio==2.2.2
+torchvision==0.17.2
 transformers==4.36.2
 
 # === System + ML Utils ===
@@ -28,17 +29,17 @@ scipy==1.13.1
 pandas==2.2.3
 joblib==1.4.2
 
-torchvision==0.17.2
-
 # === Backend I/O and Audio ===
-ffmpeg-python==0.2.0  # Optional, backend audio conversion (if needed)
-
-uvicorn==0.29.0  # If you want to run async mode or migrate to FastAPI
-
+ffmpeg-python==0.2.0  # Audio conversion
 python-dotenv==1.0.1
 
+# === Google Drive Model Fetching ===
+gdown==5.1.0  # Ensure latest gdown for Google Drive download
+
+# === Optional: OpenAI
 openai==1.14.2
 
-gdown
+# === Async Server Option (Optional)
+uvicorn==0.29.0
 
 
