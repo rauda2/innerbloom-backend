@@ -3,7 +3,6 @@ import cv2
 import numpy as np
 import torch
 import librosa
-import gdown
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from torchvision import models, transforms
@@ -11,26 +10,13 @@ from dotenv import load_dotenv
 from torch import nn
 import traceback
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from pydub import AudioSegment
 
-# === Auto-download model if not found ===
-def download_models_if_missing():
-    os.makedirs("models", exist_ok=True)
-    model_path = "models/chat_emotion_model.pth"
-    if not os.path.exists(model_path):
-        print("⬇️ Downloading chat_emotion_model.pth...")
-        gdown.download(
-            "https://drive.google.com/uc?id=1RvS7M61kEdJbVOkJyFm6NCAPaH4NwGhK",
-            model_path,
-            quiet=False
-        )
-
-download_models_if_missing()
 load_dotenv()
 
-# === Flask Setup ===
 app = Flask(__name__)
 CORS(app)
-app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB max upload size
 
 EMOTION_LABELS = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise']
 CHAT_LABELS = EMOTION_LABELS
@@ -77,10 +63,7 @@ def get_chat_model():
     global _chat_model, _chat_tokenizer
     if _chat_model is None or _chat_tokenizer is None:
         _chat_tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
-        model = AutoModelForSequenceClassification.from_pretrained(
-            "distilbert-base-uncased",
-            num_labels=len(CHAT_LABELS)
-        )
+        model = AutoModelForSequenceClassification.from_pretrained("distilbert-base-uncased", num_labels=len(CHAT_LABELS))
         model.load_state_dict(torch.load("models/chat_emotion_model.pth", map_location="cpu"))
         model.eval()
         _chat_model = model
@@ -124,9 +107,19 @@ def analyze_voice():
     try:
         audio_file = request.files.get('audio')
         if not audio_file:
-            return jsonify({"error": "No audio file provided"}), 400
+            return jsonify({"label": "Unknown", "transcript": "No audio file provided"}), 400
 
-        y, sr = librosa.load(audio_file, sr=16000)
+        temp_input_path = "temp_input.3gp"
+        temp_output_path = "temp.wav"
+        audio_file.save(temp_input_path)
+
+        sound = AudioSegment.from_file(temp_input_path, format="3gp")
+        sound.export(temp_output_path, format="wav")
+
+        y, sr = librosa.load(temp_output_path, sr=16000)
+        if y is None or len(y) == 0:
+            return jsonify({"label": "Unknown", "transcript": "No audio detected"}), 400
+
         mfcc = np.mean(librosa.feature.mfcc(y=y, sr=sr, n_mfcc=40).T, axis=0)
         tensor_mfcc = torch.tensor(mfcc, dtype=torch.float32).unsqueeze(0)
 
@@ -134,10 +127,10 @@ def analyze_voice():
         _, predicted = torch.max(outputs, 1)
         emotion = EMOTION_LABELS[predicted.item()]
 
-        return jsonify({"label": emotion})
+        return jsonify({"label": emotion, "transcript": "(transcript unavailable)"})
     except Exception as e:
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"label": "Unknown", "transcript": str(e)}), 500
 
 @app.route("/analyze_combined", methods=["POST"])
 def analyze_combined():
@@ -159,7 +152,10 @@ def analyze_combined():
         face_pred = torch.argmax(get_face_model()(tensor_img)).item()
 
         # Voice
-        y, sr = librosa.load(audio_file, sr=16000)
+        audio_file.save("temp_input.3gp")
+        sound = AudioSegment.from_file("temp_input.3gp", format="3gp")
+        sound.export("temp.wav", format="wav")
+        y, sr = librosa.load("temp.wav", sr=16000)
         mfcc = np.mean(librosa.feature.mfcc(y=y, sr=sr, n_mfcc=40).T, axis=0)
         tensor_mfcc = torch.tensor(mfcc, dtype=torch.float32).unsqueeze(0)
         voice_pred = torch.argmax(get_voice_model()(tensor_mfcc)).item()
@@ -190,4 +186,3 @@ def analyze_chat_history():
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5001)
-
