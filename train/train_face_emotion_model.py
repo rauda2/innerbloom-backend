@@ -62,6 +62,6 @@ def train_face_model(data_dir, output_path, epochs=5, batch_size=32):
     print(f"✅ Face model saved to {output_path}")
 
 # === Run Training ===
-if __name__ == "__main__":
+if __name__ == "__main__": 
     train_face_model("dataset/face_emotions/FER2013/train", "models/face_emotion_model.pth")
 

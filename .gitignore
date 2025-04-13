@@ -12,35 +12,26 @@ __pycache__/
 # === VSCode ===
 .vscode/
 
-# === Model Data (Only keep necessary .pt files) ===
-models/*
+# === Model Data ===
+models/**/*
 !models/face_emotion_model/
 !models/face_emotion_model/model.pt
 !models/voice_emotion_model/
-!models/voice_emotion_model/model.pt
 
-# === Training Data, Logs, and Checkpoints ===
-dataset/
-logs/
-*.h5
-*.ckpt
+# === Dataset or Outputs ===
+results/
+*.wav
+*.mp4
+*.avi
+*.csv
+*.npy
+
+# === Large Files ===
 *.pth
-*.onnx
 
-# === Android Studio ===
-*.iml
-.gradle/
-.idea/
-*.apk
-*.aar
-*.cxx/
-local.properties
-build/
-captures/
-
-# === Build Artifacts ===
-*.tar.gz
+# === Build & Distribution ===
 *.zip
+*.tar.gz
 dist/
 build/
 

@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import torch
 import librosa
+import gdown
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from torchvision import models, transforms
@@ -11,11 +12,25 @@ from torch import nn
 import traceback
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
+# === Auto-download model if not found ===
+def download_models_if_missing():
+    os.makedirs("models", exist_ok=True)
+    model_path = "models/chat_emotion_model.pth"
+    if not os.path.exists(model_path):
+        print("⬇️ Downloading chat_emotion_model.pth...")
+        gdown.download(
+            "https://drive.google.com/uc?id=1RvS7M61kEdJbVOkJyFm6NCAPaH4NwGhK",
+            model_path,
+            quiet=False
+        )
+
+download_models_if_missing()
 load_dotenv()
 
+# === Flask Setup ===
 app = Flask(__name__)
 CORS(app)
-app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB max upload size
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
 
 EMOTION_LABELS = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise']
 CHAT_LABELS = EMOTION_LABELS
@@ -62,7 +77,10 @@ def get_chat_model():
     global _chat_model, _chat_tokenizer
     if _chat_model is None or _chat_tokenizer is None:
         _chat_tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
-        model = AutoModelForSequenceClassification.from_pretrained("distilbert-base-uncased", num_labels=len(CHAT_LABELS))
+        model = AutoModelForSequenceClassification.from_pretrained(
+            "distilbert-base-uncased",
+            num_labels=len(CHAT_LABELS)
+        )
         model.load_state_dict(torch.load("models/chat_emotion_model.pth", map_location="cpu"))
         model.eval()
         _chat_model = model
