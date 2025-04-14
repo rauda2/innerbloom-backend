@@ -12,12 +12,6 @@ __pycache__/
 # === VSCode ===
 .vscode/
 
-# === Model Data ===
-models/**/*
-!models/face_emotion_model/
-!models/face_emotion_model/model.pt
-!models/voice_emotion_model/
-
 # === Dataset or Outputs ===
 results/
 *.wav
@@ -25,9 +19,6 @@ results/
 *.avi
 *.csv
 *.npy
-
-# === Large Files ===
-*.pth
 
 # === Build & Distribution ===
 *.zip

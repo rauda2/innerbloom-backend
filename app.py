@@ -1,33 +1,26 @@
 import os
 import cv2
-import numpy as np
 import torch
 import librosa
 import gdown
+import numpy as np
+import traceback
+from torch import nn
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from torchvision import models, transforms
-from dotenv import load_dotenv
-from torch import nn
-import traceback
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from pydub import AudioSegment
 
-load_dotenv()
-
+# ============ Setup ============
 app = Flask(__name__)
 CORS(app)
-app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB max upload size
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB limit
 
 EMOTION_LABELS = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise']
 CHAT_LABELS = EMOTION_LABELS
 
-# === Lazy-loaded models ===
-_face_model = None
-_voice_model = None
-_chat_model = None
-_chat_tokenizer = None
-
-# === File download from Drive if not available ===
+# === Paths ===
 MODEL_DIR = "models"
 FACE_MODEL_PATH = os.path.join(MODEL_DIR, "face_emotion_model.pth")
 VOICE_MODEL_PATH = os.path.join(MODEL_DIR, "voice_emotion_model.pth")
@@ -38,6 +31,12 @@ DRIVE_MODELS = {
     VOICE_MODEL_PATH: "https://drive.google.com/uc?id=1YNX7PRjltdDZDnJaplNLZybx4B2L_WcL",
     CHAT_MODEL_PATH: "https://drive.google.com/uc?id=1RvS7M61kEdJbVOkJyFm6NCAPaH4NwGhK"
 }
+
+# ============ Lazy-Load Models ============
+_face_model = None
+_voice_model = None
+_chat_model = None
+_chat_tokenizer = None
 
 def ensure_model(path, url):
     if not os.path.exists(path):
@@ -50,7 +49,7 @@ def get_face_model():
         ensure_model(FACE_MODEL_PATH, DRIVE_MODELS[FACE_MODEL_PATH])
         model = models.resnet18(weights=None)
         model.fc = nn.Linear(model.fc.in_features, len(EMOTION_LABELS))
-        model.load_state_dict(torch.load(FACE_MODEL_PATH, map_location='cpu'))
+        model.load_state_dict(torch.load(FACE_MODEL_PATH, map_location="cpu"))
         model.eval()
         _face_model = model
         print("✅ Face model loaded")
@@ -60,19 +59,18 @@ def get_voice_model():
     global _voice_model
     if _voice_model is None:
         ensure_model(VOICE_MODEL_PATH, DRIVE_MODELS[VOICE_MODEL_PATH])
-        class VoiceClassifier(nn.Module):
-            def __init__(self, input_dim=40, hidden_dim=64, output_dim=len(EMOTION_LABELS)):
+        class VoiceNet(nn.Module):
+            def __init__(self):
                 super().__init__()
                 self.net = nn.Sequential(
-                    nn.Linear(input_dim, hidden_dim),
+                    nn.Linear(40, 64),
                     nn.ReLU(),
-                    nn.Linear(hidden_dim, output_dim)
+                    nn.Linear(64, len(EMOTION_LABELS))
                 )
             def forward(self, x):
                 return self.net(x)
-
-        model = VoiceClassifier()
-        model.load_state_dict(torch.load(VOICE_MODEL_PATH, map_location='cpu'))
+        model = VoiceNet()
+        model.load_state_dict(torch.load(VOICE_MODEL_PATH, map_location="cpu"))
         model.eval()
         _voice_model = model
         print("✅ Voice model loaded")
@@ -90,16 +88,18 @@ def get_chat_model():
         print("✅ Chat model loaded")
     return _chat_model, _chat_tokenizer
 
+# ============ Routes ============
+
 @app.route("/ping")
 def ping():
-    return jsonify({"status": "ok", "message": "Server is running ✅"})
+    return jsonify({"status": "ok", "message": "Server running ✅"})
 
 @app.route("/analyze_face", methods=["POST"])
 def analyze_face():
     try:
-        image_file = request.files.get('image')
+        image_file = request.files.get("image")
         if not image_file:
-            return jsonify({"error": "No image file provided"}), 400
+            return jsonify({"error": "No image uploaded"}), 400
 
         img = cv2.imdecode(np.frombuffer(image_file.read(), np.uint8), cv2.IMREAD_COLOR)
         if img is None:
@@ -113,11 +113,13 @@ def analyze_face():
         ])
         tensor_img = transform(img).unsqueeze(0)
 
-        outputs = get_face_model()(tensor_img)
-        _, predicted = torch.max(outputs, 1)
-        emotion = EMOTION_LABELS[predicted.item()]
+        model = get_face_model()
+        with torch.no_grad():
+            output = model(tensor_img)
+            prediction = torch.argmax(output, dim=1).item()
+            label = EMOTION_LABELS[prediction]
 
-        return jsonify({"label": emotion})
+        return jsonify({"label": label})
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -129,7 +131,17 @@ def analyze_voice():
         if not audio_file:
             return jsonify({"error": "No audio file provided"}), 400
 
-        y, sr = librosa.load(audio_file, sr=16000)
+        # Save the uploaded .3gp file temporarily
+        input_path = "temp_input.3gp"
+        output_path = "temp_output.wav"
+        audio_file.save(input_path)
+
+        # Convert .3gp to .wav using pydub
+        sound = AudioSegment.from_file(input_path)
+        sound.export(output_path, format="wav")
+
+        # Load the converted .wav file with librosa
+        y, sr = librosa.load(output_path, sr=16000)
         mfcc = np.mean(librosa.feature.mfcc(y=y, sr=sr, n_mfcc=40).T, axis=0)
         tensor_mfcc = torch.tensor(mfcc, dtype=torch.float32).unsqueeze(0)
 
@@ -137,7 +149,33 @@ def analyze_voice():
         _, predicted = torch.max(outputs, 1)
         emotion = EMOTION_LABELS[predicted.item()]
 
+        # Clean up temp files
+        os.remove(input_path)
+        os.remove(output_path)
+
         return jsonify({"label": emotion})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/analyze_chat_history", methods=["POST"])
+def analyze_chat_history():
+    try:
+        data = request.get_json()
+        text = data.get("text", "")
+        if not text:
+            return jsonify({"error": "No text provided"}), 400
+
+        model, tokenizer = get_chat_model()
+        inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True)
+        with torch.no_grad():
+            outputs = model(**inputs)
+            scores = torch.nn.functional.softmax(outputs.logits, dim=1)
+            prediction = torch.argmax(scores, dim=1).item()
+            label = CHAT_LABELS[prediction]
+            confidence = round(scores[0][prediction].item() * 100, 2)
+
+        return jsonify({"label": label, "score": confidence})
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -145,10 +183,10 @@ def analyze_voice():
 @app.route("/analyze_combined", methods=["POST"])
 def analyze_combined():
     try:
-        image_file = request.files.get('image')
-        audio_file = request.files.get('audio')
+        image_file = request.files.get("image")
+        audio_file = request.files.get("audio")
         if not image_file or not audio_file:
-            return jsonify({"error": "Both image and audio are required"}), 400
+            return jsonify({"error": "Both image and audio required"}), 400
 
         # Face
         img = cv2.imdecode(np.frombuffer(image_file.read(), np.uint8), cv2.IMREAD_COLOR)
@@ -175,22 +213,7 @@ def analyze_combined():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-@app.route("/analyze_chat_history", methods=["POST"])
-def analyze_chat_history():
-    try:
-        data = request.get_json()
-        text = data.get("text", "")
-        model, tokenizer = get_chat_model()
-        inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True)
-        outputs = model(**inputs)
-        scores = torch.nn.functional.softmax(outputs.logits, dim=1)
-        predicted = torch.argmax(scores, 1).item()
-        confidence = scores[0][predicted].item() * 100
-        return jsonify({"label": CHAT_LABELS[predicted], "score": round(confidence, 2)})
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
-
+# ============ Start Server ============
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5001)
 
