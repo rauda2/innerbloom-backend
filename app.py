@@ -116,10 +116,16 @@ def analyze_face():
         model = get_face_model()
         with torch.no_grad():
             output = model(tensor_img)
-            prediction = torch.argmax(output, dim=1).item()
-            label = EMOTION_LABELS[prediction]
+            probabilities = torch.nn.functional.softmax(output, dim=1).squeeze().tolist()
 
-        return jsonify({"label": label})
+        prediction = torch.argmax(output, dim=1).item()
+        label = EMOTION_LABELS[prediction]
+
+        # Prepare scores dictionary
+        scores = {emotion: round(prob * 100, 2) for emotion, prob in zip(EMOTION_LABELS, probabilities)}
+
+        return jsonify({"label": label, "scores": scores})
+
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -131,7 +137,7 @@ def analyze_voice():
         if not audio_file:
             return jsonify({"error": "No audio file provided"}), 400
 
-        # Save the uploaded .3gp file temporarily
+        # Save uploaded .3gp file
         input_path = "temp_input.3gp"
         output_path = "temp_output.wav"
         audio_file.save(input_path)
@@ -140,20 +146,28 @@ def analyze_voice():
         sound = AudioSegment.from_file(input_path)
         sound.export(output_path, format="wav")
 
-        # Load the converted .wav file with librosa
+        # Load the .wav file with librosa
         y, sr = librosa.load(output_path, sr=16000)
         mfcc = np.mean(librosa.feature.mfcc(y=y, sr=sr, n_mfcc=40).T, axis=0)
         tensor_mfcc = torch.tensor(mfcc, dtype=torch.float32).unsqueeze(0)
 
-        outputs = get_voice_model()(tensor_mfcc)
-        _, predicted = torch.max(outputs, 1)
-        emotion = EMOTION_LABELS[predicted.item()]
+        model = get_voice_model()
+        with torch.no_grad():
+            outputs = model(tensor_mfcc)
+            probabilities = torch.nn.functional.softmax(outputs, dim=1).squeeze().tolist()
+
+        predicted = torch.argmax(outputs, dim=1).item()
+        emotion = EMOTION_LABELS[predicted]
 
         # Clean up temp files
         os.remove(input_path)
         os.remove(output_path)
 
-        return jsonify({"label": emotion})
+        # Format scores
+        scores = {emotion: round(prob * 100, 2) for emotion, prob in zip(EMOTION_LABELS, probabilities)}
+
+        return jsonify({"label": emotion, "scores": scores})
+
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
